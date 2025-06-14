@@ -31,6 +31,61 @@ function debounce(func, wait) {
     };
 }
 
+// $ref参照を解決する関数
+function resolveRef(ref, rootSchema) {
+    if (!ref.startsWith('#/')) {
+        return null; // 外部参照は未対応
+    }
+    
+    const path = ref.substring(2).split('/'); // #/ を除去してパス分割
+    let current = rootSchema;
+    
+    for (const segment of path) {
+        if (current && typeof current === 'object' && segment in current) {
+            current = current[segment];
+        } else {
+            return null; // 参照先が見つからない
+        }
+    }
+    
+    return current;
+}
+
+// スキーマの$ref参照を解決する
+function resolveSchema(schema, rootSchema) {
+    if (!schema || typeof schema !== 'object') {
+        return schema;
+    }
+    
+    // $refがある場合は参照を解決
+    if (schema.$ref) {
+        const resolvedSchema = resolveRef(schema.$ref, rootSchema);
+        if (resolvedSchema) {
+            // 解決されたスキーマを再帰的に処理
+            return resolveSchema(resolvedSchema, rootSchema);
+        } else {
+            console.warn(`参照 ${schema.$ref} が解決できません`);
+            return schema;
+        }
+    }
+    
+    // オブジェクトのプロパティを再帰的に処理
+    const resolved = { ...schema };
+    
+    if (resolved.properties) {
+        resolved.properties = {};
+        for (const [key, propSchema] of Object.entries(schema.properties)) {
+            resolved.properties[key] = resolveSchema(propSchema, rootSchema);
+        }
+    }
+    
+    if (resolved.items) {
+        resolved.items = resolveSchema(resolved.items, rootSchema);
+    }
+    
+    return resolved;
+}
+
 // フォーム生成メイン関数
 function generateForm() {
     try {
@@ -46,7 +101,9 @@ function generateForm() {
         validationErrors = [];
         
         if (schema.type === 'object' && schema.properties) {
-            const formHtml = generateObjectForm(schema, '', currentData);
+            // $ref参照を解決してからフォーム生成
+            const resolvedSchema = resolveSchema(schema, schema);
+            const formHtml = generateObjectForm(resolvedSchema, '', currentData);
             formContainer.innerHTML = formHtml;
             
             // イベントリスナーを設定
@@ -420,7 +477,9 @@ function validateData() {
     validationErrors = [];
     
     if (currentSchema && currentSchema.type === 'object') {
-        validateObject(currentData, currentSchema, '');
+        // $ref参照を解決してからバリデーション
+        const resolvedSchema = resolveSchema(currentSchema, currentSchema);
+        validateObject(currentData, resolvedSchema, '', currentSchema);
     }
     
     console.log('validationErrors:', validationErrors);
@@ -431,9 +490,13 @@ function validateData() {
 }
 
 // オブジェクトバリデーション
-function validateObject(data, schema, path) {
+function validateObject(data, schema, path, rootSchema = null) {
     const properties = schema.properties || {};
     const required = schema.required || [];
+    
+    if (rootSchema === null) {
+        rootSchema = currentSchema;
+    }
     
     // 必須項目チェック
     for (const requiredField of required) {
@@ -467,7 +530,7 @@ function validateObject(data, schema, path) {
         const fieldValue = data[fieldName];
         
         if (fieldValue !== undefined && fieldValue !== '' && fieldValue !== null) {
-            validateField(fieldValue, fieldSchema, fieldPath, fieldName);
+            validateField(fieldValue, fieldSchema, fieldPath, fieldName, rootSchema);
         }
     }
     
@@ -489,7 +552,11 @@ function validateObject(data, schema, path) {
 }
 
 // フィールドバリデーション
-function validateField(value, schema, path, fieldName) {
+function validateField(value, schema, path, fieldName, rootSchema = null) {
+    if (rootSchema === null) {
+        rootSchema = currentSchema;
+    }
+    
     const type = schema.type;
     
     // 型チェック
@@ -590,7 +657,7 @@ function validateField(value, schema, path, fieldName) {
     
     // ネストオブジェクトバリデーション
     if (type === 'object' && typeof value === 'object' && value !== null) {
-        validateObject(value, schema, path);
+        validateObject(value, schema, path, rootSchema);
     }
     
     // 配列バリデーション
@@ -598,7 +665,7 @@ function validateField(value, schema, path, fieldName) {
         if (schema.items) {
             value.forEach((item, index) => {
                 const itemPath = `${path}[${index}]`;
-                validateField(item, schema.items, itemPath, `${fieldName}[${index}]`);
+                validateField(item, schema.items, itemPath, `${fieldName}[${index}]`, rootSchema);
             });
         }
         
@@ -880,6 +947,121 @@ function loadConfigSchema() {
     generateForm();
 }
 
+function loadRefSchema() {
+    const schema = {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "Organization with $ref",
+        "type": "object",
+        "definitions": {
+            "address": {
+                "type": "object",
+                "properties": {
+                    "street": {
+                        "type": "string",
+                        "description": "街道名"
+                    },
+                    "city": {
+                        "type": "string",
+                        "description": "市区町村"
+                    },
+                    "zipCode": {
+                        "type": "string",
+                        "pattern": "^[0-9]{3}-[0-9]{4}$",
+                        "description": "郵便番号"
+                    },
+                    "country": {
+                        "type": "string",
+                        "enum": ["Japan", "USA", "UK", "Canada"],
+                        "description": "国"
+                    }
+                },
+                "required": ["street", "city", "zipCode", "country"]
+            },
+            "person": {
+                "type": "object",
+                "properties": {
+                    "firstName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "名"
+                    },
+                    "lastName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "姓"
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "description": "メールアドレス"
+                    },
+                    "phone": {
+                        "type": "string",
+                        "pattern": "^[0-9-]+$",
+                        "description": "電話番号"
+                    },
+                    "address": {
+                        "$ref": "#/definitions/address"
+                    }
+                },
+                "required": ["firstName", "lastName", "email"]
+            }
+        },
+        "properties": {
+            "companyName": {
+                "type": "string",
+                "minLength": 1,
+                "description": "会社名"
+            },
+            "foundedYear": {
+                "type": "number",
+                "minimum": 1800,
+                "maximum": 2024,
+                "description": "設立年"
+            },
+            "headquarters": {
+                "$ref": "#/definitions/address"
+            },
+            "ceo": {
+                "$ref": "#/definitions/person"
+            },
+            "employees": {
+                "type": "array",
+                "items": {
+                    "$ref": "#/definitions/person"
+                },
+                "description": "従業員リスト"
+            },
+            "branches": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "支店名"
+                        },
+                        "address": {
+                            "$ref": "#/definitions/address"
+                        },
+                        "manager": {
+                            "$ref": "#/definitions/person"
+                        }
+                    },
+                    "required": ["name", "address"]
+                },
+                "description": "支店リスト"
+            }
+        },
+        "required": ["companyName", "foundedYear", "headquarters", "ceo"]
+    };
+    
+    if (schemaEditor) {
+        schemaEditor.value = JSON.stringify(schema, null, 2);
+        generateForm();
+    }
+}
+
 function clearAll() {
     schemaEditor.value = '';
     showEmptyForm();
@@ -898,6 +1080,7 @@ window.generateForm = generateForm;
 window.loadPersonSchema = loadPersonSchema;
 window.loadProductSchema = loadProductSchema;
 window.loadConfigSchema = loadConfigSchema;
+window.loadRefSchema = loadRefSchema;
 window.clearAll = clearAll;
 window.addArrayItem = addArrayItem;
 window.removeArrayItem = removeArrayItem;

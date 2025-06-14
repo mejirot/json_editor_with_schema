@@ -60,9 +60,45 @@ function validateJson() {
     }
 }
 
+// $ref参照を解決する関数
+function resolveRef(ref, rootSchema) {
+    if (!ref.startsWith('#/')) {
+        return null; // 外部参照は未対応
+    }
+    
+    const path = ref.substring(2).split('/'); // #/ を除去してパス分割
+    let current = rootSchema;
+    
+    for (const segment of path) {
+        if (current && typeof current === 'object' && segment in current) {
+            current = current[segment];
+        } else {
+            return null; // 参照先が見つからない
+        }
+    }
+    
+    return current;
+}
+
 // シンプルなスキーマ検証関数
-function validateAgainstSchema(data, schema, path = '') {
+function validateAgainstSchema(data, schema, path = '', rootSchema = null) {
     const errors = [];
+    
+    // ルートスキーマが指定されていない場合は現在のスキーマをルートとする
+    if (rootSchema === null) {
+        rootSchema = schema;
+    }
+    
+    // $ref がある場合は参照を解決
+    if (schema.$ref) {
+        const resolvedSchema = resolveRef(schema.$ref, rootSchema);
+        if (resolvedSchema) {
+            return validateAgainstSchema(data, resolvedSchema, path, rootSchema);
+        } else {
+            errors.push(`${path || 'ルート'}: 参照 ${schema.$ref} が解決できません`);
+            return { valid: false, errors };
+        }
+    }
     
     if (schema.type) {
         const actualType = getJsonType(data);
@@ -87,7 +123,7 @@ function validateAgainstSchema(data, schema, path = '') {
             for (const [prop, propSchema] of Object.entries(schema.properties)) {
                 if (prop in data) {
                     const propPath = path ? `${path}.${prop}` : prop;
-                    const propResult = validateAgainstSchema(data[prop], propSchema, propPath);
+                    const propResult = validateAgainstSchema(data[prop], propSchema, propPath, rootSchema);
                     errors.push(...propResult.errors);
                 }
             }
@@ -142,7 +178,7 @@ function validateAgainstSchema(data, schema, path = '') {
         if (schema.items) {
             data.forEach((item, index) => {
                 const itemPath = `${path || 'ルート'}[${index}]`;
-                const itemResult = validateAgainstSchema(item, schema.items, itemPath);
+                const itemResult = validateAgainstSchema(item, schema.items, itemPath, rootSchema);
                 errors.push(...itemResult.errors);
             });
         }
@@ -379,6 +415,180 @@ function loadConfigSchema() {
         jsonEditor.value = JSON.stringify(data, null, 2);
         validateJson();
     }
+}
+
+function loadRefSchema() {
+    const schema = {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "Organization with $ref",
+        "type": "object",
+        "definitions": {
+            "address": {
+                "type": "object",
+                "properties": {
+                    "street": {
+                        "type": "string",
+                        "description": "街道名"
+                    },
+                    "city": {
+                        "type": "string",
+                        "description": "市区町村"
+                    },
+                    "zipCode": {
+                        "type": "string",
+                        "pattern": "^[0-9]{3}-[0-9]{4}$",
+                        "description": "郵便番号"
+                    },
+                    "country": {
+                        "type": "string",
+                        "enum": ["Japan", "USA", "UK", "Canada"],
+                        "description": "国"
+                    }
+                },
+                "required": ["street", "city", "zipCode", "country"]
+            },
+            "person": {
+                "type": "object",
+                "properties": {
+                    "firstName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "名"
+                    },
+                    "lastName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "姓"
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "description": "メールアドレス"
+                    },
+                    "phone": {
+                        "type": "string",
+                        "pattern": "^[0-9-]+$",
+                        "description": "電話番号"
+                    },
+                    "address": {
+                        "$ref": "#/definitions/address"
+                    }
+                },
+                "required": ["firstName", "lastName", "email"]
+            }
+        },
+        "properties": {
+            "companyName": {
+                "type": "string",
+                "minLength": 1,
+                "description": "会社名"
+            },
+            "foundedYear": {
+                "type": "number",
+                "minimum": 1800,
+                "maximum": 2024,
+                "description": "設立年"
+            },
+            "headquarters": {
+                "$ref": "#/definitions/address"
+            },
+            "ceo": {
+                "$ref": "#/definitions/person"
+            },
+            "employees": {
+                "type": "array",
+                "items": {
+                    "$ref": "#/definitions/person"
+                },
+                "description": "従業員リスト"
+            },
+            "branches": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "支店名"
+                        },
+                        "address": {
+                            "$ref": "#/definitions/address"
+                        },
+                        "manager": {
+                            "$ref": "#/definitions/person"
+                        }
+                    },
+                    "required": ["name", "address"]
+                },
+                "description": "支店リスト"
+            }
+        },
+        "required": ["companyName", "foundedYear", "headquarters", "ceo"]
+    };
+    
+    const data = {
+        "companyName": "テックコーポレーション株式会社",
+        "foundedYear": 2010,
+        "headquarters": {
+            "street": "1-2-3 渋谷",
+            "city": "渋谷区",
+            "zipCode": "150-0002",
+            "country": "Japan"
+        },
+        "ceo": {
+            "firstName": "太郎",
+            "lastName": "田中",
+            "email": "tanaka.taro@techcorp.co.jp",
+            "phone": "03-1234-5678",
+            "address": {
+                "street": "4-5-6 恵比寿",
+                "city": "渋谷区",
+                "zipCode": "150-0013",
+                "country": "Japan"
+            }
+        },
+        "employees": [
+            {
+                "firstName": "花子",
+                "lastName": "佐藤",
+                "email": "sato.hanako@techcorp.co.jp",
+                "phone": "03-2345-6789",
+                "address": {
+                    "street": "7-8-9 新宿",
+                    "city": "新宿区",
+                    "zipCode": "160-0022",
+                    "country": "Japan"
+                }
+            },
+            {
+                "firstName": "次郎",
+                "lastName": "鈴木",
+                "email": "suzuki.jiro@techcorp.co.jp",
+                "phone": "03-3456-7890"
+            }
+        ],
+        "branches": [
+            {
+                "name": "大阪支店",
+                "address": {
+                    "street": "1-1-1 梅田",
+                    "city": "北区",
+                    "zipCode": "530-0001",
+                    "country": "Japan"
+                },
+                "manager": {
+                    "firstName": "三郎",
+                    "lastName": "高橋",
+                    "email": "takahashi.saburo@techcorp.co.jp",
+                    "phone": "06-1234-5678"
+                }
+            }
+        ]
+    };
+    
+    schemaEditor.value = JSON.stringify(schema, null, 2);
+    jsonEditor.value = JSON.stringify(data, null, 2);
+    validateJson();
 }
 
 // 初期化関数
