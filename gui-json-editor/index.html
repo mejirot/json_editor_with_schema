@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GUI JSON Editor with Schema</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .main-layout {
+            display: flex;
+            gap: 20px;
+            min-height: 600px;
+        }
+        
+        .schema-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .gui-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .json-output-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .panel-header {
+            background: #f8f9fa;
+            padding: 15px;
+            border: 1px solid #dee2e6;
+            border-bottom: none;
+            border-radius: 4px 4px 0 0;
+            font-weight: bold;
+            color: #495057;
+            font-size: 16px;
+        }
+        
+        .panel-content {
+            flex: 1;
+            padding: 20px;
+            border: 1px solid #dee2e6;
+            border-radius: 0 0 4px 4px;
+            overflow-y: auto;
+        }
+        
+        .schema-textarea {
+            width: 100%;
+            height: 100%;
+            padding: 15px;
+            border: none;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            resize: none;
+            outline: none;
+            background: #f8f9fa;
+        }
+        
+        .json-output {
+            width: 100%;
+            height: 100%;
+            padding: 15px;
+            border: none;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            resize: none;
+            outline: none;
+            background: #f8f9fa;
+            color: #333;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .form-label .required {
+            color: #dc3545;
+            margin-left: 4px;
+        }
+        
+        .form-label .description {
+            font-weight: normal;
+            color: #666;
+            font-size: 14px;
+            margin-left: 8px;
+        }
+        
+        .form-control {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: border-color 0.15s ease-in-out;
+        }
+        
+        .form-control:focus {
+            border-color: #007bff;
+            outline: none;
+            box-shadow: 0 0 0 0.2rem rgba(0,123,255,0.25);
+        }
+        
+        .form-control.is-invalid {
+            border-color: #dc3545;
+        }
+        
+        .invalid-feedback {
+            display: block;
+            width: 100%;
+            margin-top: 0.25rem;
+            font-size: 0.875rem;
+            color: #dc3545;
+        }
+        
+        .form-select {
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23343a40' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m1 6 7 7 7-7'/%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 0.75rem center;
+            background-size: 16px 12px;
+            padding-right: 2.5rem;
+        }
+        
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .checkbox-group input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            margin: 0;
+        }
+        
+        .nested-object {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 4px;
+            border: 1px solid #e9ecef;
+            margin-top: 10px;
+        }
+        
+        .nested-object h4 {
+            margin: 0 0 15px 0;
+            color: #495057;
+            font-size: 16px;
+            border-bottom: 1px solid #dee2e6;
+            padding-bottom: 8px;
+        }
+        
+        .array-container {
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            background: #f8f9fa;
+        }
+        
+        .array-item {
+            background: white;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            border: 1px solid #e9ecef;
+            position: relative;
+        }
+        
+        .array-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            font-weight: 600;
+            color: #495057;
+        }
+        
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.15s ease-in-out;
+        }
+        
+        .btn-primary {
+            background-color: #007bff;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background-color: #0056b3;
+        }
+        
+        .btn-danger {
+            background-color: #dc3545;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background-color: #c82333;
+        }
+        
+        .btn-success {
+            background-color: #28a745;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background-color: #218838;
+        }
+        
+        .btn-sm {
+            padding: 4px 8px;
+            font-size: 12px;
+        }
+        
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
+        .empty-form {
+            text-align: center;
+            color: #666;
+            font-style: italic;
+            padding: 40px;
+        }
+        
+        .validation-status {
+            padding: 12px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        
+        .validation-valid {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .validation-invalid {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .validation-warning {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        
+        .field-error {
+            border-color: #dc3545 !important;
+            box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25) !important;
+        }
+        
+        .field-valid {
+            border-color: #28a745 !important;
+        }
+        
+        .error-list {
+            margin: 8px 0 0 0;
+            padding-left: 20px;
+            list-style-type: disc;
+        }
+        
+        .error-list li {
+            margin-bottom: 4px;
+            font-size: 13px;
+        }
+        
+        .validation-summary {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        
+        .validation-counts {
+            font-size: 12px;
+            opacity: 0.8;
+        }
+        
+        @media (max-width: 768px) {
+            .main-layout {
+                flex-direction: column;
+            }
+            
+            .panel-header {
+                font-size: 14px;
+                padding: 12px;
+            }
+            
+            .panel-content {
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>GUI JSON Editor with Schema</h1>
+        
+        <div class="main-layout">
+            <div class="schema-panel">
+                <div class="panel-header">
+                    JSON Schema
+                </div>
+                <div class="panel-content">
+                    <textarea id="schemaEditor" class="schema-textarea" placeholder="JSONスキーマを入力してください...">
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "氏名"
+    },
+    "age": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 150,
+      "description": "年齢"
+    },
+    "email": {
+      "type": "string",
+      "format": "email",
+      "description": "メールアドレス"
+    },
+    "isActive": {
+      "type": "boolean",
+      "description": "アクティブ状態"
+    },
+    "category": {
+      "type": "string",
+      "enum": ["student", "teacher", "admin"],
+      "description": "カテゴリ"
+    }
+  },
+  "required": ["name", "email"],
+  "additionalProperties": false
+}</textarea>
+                </div>
+            </div>
+            
+            <div class="gui-panel">
+                <div class="panel-header">
+                    GUI フォーム
+                </div>
+                <div class="panel-content">
+                    <div id="formContainer">
+                        <div class="empty-form">
+                            スキーマを入力すると、GUIフォームが自動生成されます
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="json-output-panel">
+                <div class="panel-header">
+                    JSON 出力
+                </div>
+                <div class="panel-content">
+                    <div id="validationStatus" class="validation-status validation-warning">
+                        バリデーション待機中...
+                    </div>
+                    <textarea id="jsonOutput" class="json-output" readonly placeholder="フォームに入力するとJSONが生成されます..."></textarea>
+                </div>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button class="btn btn-primary" onclick="generateForm()">フォーム生成</button>
+            <button class="btn btn-primary" onclick="validateData()">バリデーション実行</button>
+            <button class="btn btn-success" onclick="loadPersonSchema()">Person Schema</button>
+            <button class="btn btn-success" onclick="loadProductSchema()">Product Schema</button>
+            <button class="btn btn-success" onclick="loadConfigSchema()">Config Schema</button>
+            <button class="btn btn-danger" onclick="clearAll()">クリア</button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
